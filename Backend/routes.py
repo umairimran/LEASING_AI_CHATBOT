@@ -1,147 +1,69 @@
-from fastapi import APIRouter
-from fastapi import FastAPI
-from fastapi import UploadFile, File, Form
-from typing import List
 import os
 import tempfile
-from functions import *
 import logging
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from typing import List, Optional
+from fastapi import APIRouter, File, UploadFile, Form, HTTPException
+from models import SearchRequest, SearchResponse, ChatRequest, ChatResponse
 
-from Vector_Database import *
-logging.basicConfig(level=logging.INFO)
+from document_processor import chat_with_documents, delete_document_embeddings, get_all_documents, get_fixed_user_id, process_document, get_index_name_from_document, search_documents,store_document_embeddings
+
+from database import get_conversation_history, delete_conversation_history
+
+# Configure lo  gging
 logger = logging.getLogger(__name__)
 
+# Create router
+router = APIRouter()
 
-app=FastAPI()
+@router.get("/test")
+async def test_endpoint():
+    return {"message": "API is working"}
 
-# Initialize client pool
-client_pool = WeaviateClientPool()
-
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Starting up...")
-    try:
-        client_pool.get_client()
-    except Exception as e:
-        logger.error(f"Failed ot initilaiz startup up: {e}")
-        
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Application shutting down")
-    try:
-        client_pool.close_client()
-        logger.info("Resources cleaned up successfully")
-    except Exception as e:
-        logger.error(f"Error during shutdown cleanup: {str(e)}")
-
-
-@app.get("/test")
-async def test():
-    return {"message": "API is working fine"}
-
-@app.post("/upload-documents/")
+@router.post("/upload-documents/")
 async def upload_documents(
     files: List[UploadFile] = File(...),
-    user_id: str = Form(...)
+    
 ):
-
     try:
-        client = client_pool.get_client()
         processed_files = []
 
         for file_obj in files:
-            temp_file_path = None
             try:
-                # Generate a unique temporary file name but don't create it yet
+                # Create a temporary file to store the uploaded content
                 with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_obj.filename)[1]) as temp_file:
-                    temp_file_path = temp_file.name
-           
-                # Write uploaded file content to temporary file
-                content = await file_obj.read()
-                # Write in a separate context to ensure file handle is released
-                with open(temp_file_path, 'wb') as f:
-                    f.write(content)
-                                               
-                # Generate index name from document name
-                class_name = get_index_name_from_document(user_id, file_obj.filename)
-                  
-                # Ensure schema exists
-                collection = get_or_create_weaviate_class(class_name,client)
-
-                # Make a copy to process to avoid file locking issues
-                process_file_path = temp_file_path + ".copy"
-                with open(temp_file_path, 'rb') as src, open(process_file_path, 'wb') as dst:
-                    dst.write(src.read())
-                
-                try:
-                    # Process text using the copy file path
-                    text = extract_text(process_file_path)
-                    num_tokens = count_tokens(text)
-                    chunk_size = determine_chunk_size(num_tokens)
-
-                    # Split text
-                    text_splitter = RecursiveCharacterTextSplitter(
-                        chunk_size=chunk_size,
-                        chunk_overlap=100
-                    )
-                    texts = text_splitter.split_text(text)
-
-                    # Generate embeddings
-                    vectors = embeddings_model.encode(texts).tolist()
-
-                    # Prepare objects for import
-                    objects_to_import = []
-                    for chunk, vec in zip(texts, vectors):
-                        objects_to_import.append({
-                            "properties": {
-                                "text": chunk,
-                                "full_text": chunk
-                            },
-                            "vector": vec
+                    # Write uploaded file content to temporary file
+                    content = await file_obj.read()
+                    temp_file.write(content)
+                    temp_file.flush()
+                    temp_file.close() 
+                    
+                    try:
+                        # Process document to get chunks and embeddings
+                        print("Before embedding making")
+                        chunks, embeddings = process_document(temp_file.name)
+                        print(embeddings)
+                        print("here")
+                        # Store embeddings in Weaviate
+                        result = store_document_embeddings(
+                            
+                            user_id=get_fixed_user_id(),
+                            document_name=file_obj.filename,
+                            chunks=chunks,
+                            embeddings=embeddings
+                        )
+                        
+                        processed_files.append({
+                            'file_name': file_obj.filename,
+                            **result
                         })
 
-                    # Perform batch import
-                    successful_count, failed_objects = batch_import_objects(
-                        collection=collection,
-                        objects=objects_to_import,
-                        batch_size=20
-                    )
-
-                    processed_files.append({
-                        'file_name': file_obj.filename,
-                        'index_name': class_name,
-                        'total_chunks': len(texts),
-                        'successful_chunks': successful_count,
-                        'failed_chunks': len(failed_objects),
-                        'failed_objects': failed_objects if failed_objects else None
-                    })
-
-                finally:
-                    # Clean up the copy file
-                    try:
-                        if os.path.exists(process_file_path):
-                            os.unlink(process_file_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to delete copy file {process_file_path}: {str(e)}")
+                    finally:
+                        # Clean up the temporary file
+                        os.unlink(temp_file.name)
 
             except Exception as e:
                 logger.error(f"Error processing file {file_obj.filename}: {str(e)}")
-                processed_files.append({
-                    'file_name': file_obj.filename,
-                    'error': str(e),
-                    'status': 'failed'
-                })
-            finally:
-                # Clean up the temporary file
-                try:
-                    if temp_file_path and os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-                except Exception as e:
-                    logger.warning(f"Failed to delete temp file {temp_file_path}: {str(e)}")
+                return {"error": str(e), "file": file_obj.filename}
 
         return {
             'message': 'Documents processed and stored successfully',
@@ -151,6 +73,92 @@ async def upload_documents(
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return {"error": f"Unexpected error: {str(e)}"}
-    
+    return {"message": "Documents uploaded successfully"}
+  
+
+@router.get("/get_all_documents")
+async def get_all_documents_endpoint():  # Rename to avoid recursion
+    try:
+        documents = get_all_documents()  # Call the correct function
+        return {"documents": documents}
+    except Exception as e:
+        logger.error(f"Error getting all documents: {str(e)}")
+        return {"error": f"Error getting all documents: {str(e)}"}
 
 
+@router.delete("/delete-embeddings")
+async def delete_embeddings_endpoint(
+    document_name: str = Form(...)
+):
+    try:
+        user_id = get_fixed_user_id()
+        class_name = get_index_name_from_document(user_id, document_name)
+        
+        # Delete the embeddings
+        result = delete_document_embeddings(user_id, document_name)
+        
+        if result:
+            # Also delete associated chat history
+            delete_conversation_history(class_name)
+            
+            return {
+                "message": f"Successfully deleted embeddings and chat history for document: {document_name}",
+                "user_id": user_id,
+                "document_name": document_name,
+                "index_name": class_name
+            }
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No embeddings found for document: {document_name}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Failed to delete embeddings: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/search/", response_model=SearchResponse)
+async def search_endpoint(request: SearchRequest):
+    return search_documents(
+        user_id=get_fixed_user_id(),
+        document_name=request.document_name,
+        query=request.query,
+        limit=request.limit,
+        alpha=request.alpha
+    )
+
+
+
+@router.post("/chat/")
+async def chat_endpoint(
+    document_name: str = Form(...),
+    query: str = Form(...),
+    limit: Optional[int] = Form(5),
+    alpha: Optional[float] = Form(0.5)
+):
+    try:
+        # Create a ChatRequest object
+        print("here")
+        request = ChatRequest(
+            user_id=get_fixed_user_id(),
+            document_name=document_name,
+            query=query,
+            limit=limit,
+            alpha=alpha
+        )
+        print("here")
+        # Process chat request
+        response = chat_with_documents(
+            user_id=get_fixed_user_id(),
+            document_name=request.document_name,
+            query=request.query,
+            limit=request.limit,
+            alpha=request.alpha
+        )
+        print("here 3")
+        return response
+
+    except Exception as e:
+        logger.error(f"Chat failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
