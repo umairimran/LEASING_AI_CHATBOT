@@ -3,11 +3,11 @@ import tempfile
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException
-from models import SearchRequest, SearchResponse, ChatRequest, ChatResponse
+from Backend.models import SearchRequest, SearchResponse, ChatRequest, ChatResponse
 
-from document_processor import chat_with_documents, delete_document_embeddings, get_all_documents, get_fixed_user_id, process_document, get_index_name_from_document, search_documents,store_document_embeddings
+from Backend.document_processor import chat_with_documents, delete_document_embeddings, get_all_documents, get_fixed_user_id, process_document, get_index_name_from_document, search_documents,store_document_embeddings
 
-from database import get_conversation_history, delete_conversation_history
+from Backend.database import get_conversation_history, delete_conversation_history
 
 # Configure lo  gging
 logger = logging.getLogger(__name__)
@@ -41,8 +41,7 @@ async def upload_documents(
                         # Process document to get chunks and embeddings
                         print("Before embedding making")
                         chunks, embeddings = process_document(temp_file.name)
-                        print(embeddings)
-                        print("here")
+                     
                         # Store embeddings in Weaviate
                         result = store_document_embeddings(
                             

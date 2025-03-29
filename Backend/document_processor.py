@@ -8,18 +8,18 @@ import openai
 import requests
 
 import docx
-import textract
+import fitz
 
 import tiktoken
 from weaviate.classes.query import HybridFusion, MetadataQuery
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-import fitz  # PyMuPDF for PDF image extraction
+ # PyMuPDF for PDF image extraction
 import base64
-from database import get_conversation_history, store_conversation
+from Backend.database import get_conversation_history, store_conversation
 from groq import Groq
-from models import ChatResponse, SearchResponse, SearchResult
-from weaviate_client import WeaviateClientPool ,   get_or_create_weaviate_class
+from Backend.models import ChatResponse, SearchResponse, SearchResult
+from Backend.weaviate_client import WeaviateClientPool ,   get_or_create_weaviate_class
 import os
 import warnings
 warnings.simplefilter("ignore", DeprecationWarning)
@@ -129,8 +129,7 @@ def extract_text(file_path):
     elif file_extension == '.docx':
         doc = docx.Document(file_path)
         return "\n".join([paragraph.text for paragraph in doc.paragraphs])
-    elif file_extension == '.doc':
-        return textract.process(file_path).decode('utf-8')
+
     else:
         raise ValueError(f"Unsupported file format: {file_extension}")
 
@@ -326,6 +325,7 @@ def save_class_names(file_path, class_names):
 
 def get_all_documents():
     try:
+    
         class_names = load_class_names(class_names_file_path)
         class_names_list = [item['class_name'] for item in class_names][::-1]  # Reverse the list
         return class_names_list

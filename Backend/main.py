@@ -1,10 +1,10 @@
 import asyncio
 import logging
 from fastapi import FastAPI
-from routes import router
-from database import init_db
-from weaviate_client import WeaviateClientPool
-from logger import setup_logging
+from Backend.routes import router
+from Backend.database import init_db
+from Backend.weaviate_client import WeaviateClientPool
+from Backend.logger import setup_logging
 
 # Setup logging
 logger = setup_logging()

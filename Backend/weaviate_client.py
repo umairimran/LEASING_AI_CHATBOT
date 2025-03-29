@@ -7,8 +7,9 @@ from weaviate.classes.config import Property, DataType
 logger = logging.getLogger(__name__)
 
 # Define constants
-WEAVIATE_HOST = "127.0.0.1"
-WEAVIATE_PORT = 8081
+WEAVIATE_HOST = "weaviate"  # Use service name inside Docker
+WEAVIATE_PORT = 8080
+
 
 class WeaviateClientPool:
     _instance = None
