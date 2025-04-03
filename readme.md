@@ -38,3 +38,5 @@
 
 4. **Your chatbot is now ready to use!**
    - Upload documents and start chatting with them
+
+Task accompolished.
