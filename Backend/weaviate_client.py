@@ -41,6 +41,34 @@ class WeaviateClientPool:
             logger.info("Weaviate client closed successfully")
             self.client = None
 
+    def delete_embeddings(self, document_name):
+        """Delete all embeddings for a specific document"""
+        try:
+            # Get the Weaviate client
+            client = self.get_client()
+            
+            # Step 1: Query to find all objects with the given document name
+            where_filter = {
+                "path": ["document_name"],
+                "operator": "Equal",
+                "valueString": document_name
+            }
+            
+            # Get IDs of objects to delete
+            result = client.query.get("Document", ["id"]).with_where(where_filter).do()
+            
+            # Step 2: Delete each object by ID
+            if "data" in result and "Get" in result["data"] and "Document" in result["data"]["Get"]:
+                for item in result["data"]["Get"]["Document"]:
+                    if "id" in item:
+                        # Use the object ID to delete
+                        object_id = item["id"]
+                        client.data_object.delete(uuid=object_id, class_name="Document")
+            
+            return {"status": "success", "message": f"Embeddings for {document_name} deleted successfully"}
+        except Exception as e:
+            raise Exception(f"Error deleting embeddings: {str(e)}")
+
 def get_or_create_weaviate_class(class_name):
     """Create Weaviate schema class if it doesn't exist."""
     client_pool = WeaviateClientPool()
