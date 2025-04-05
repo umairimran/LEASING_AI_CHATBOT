@@ -1367,7 +1367,7 @@ with st.sidebar:
                                     if doc_name in st.session_state.recent_uploads:
                                         st.session_state.recent_uploads.remove(doc_name)
                                     st.markdown('<div class="upload-success">Document deleted successfully!</div>', unsafe_allow_html=True)
-                                    st.experimental_rerun()
+                                    st.rerun()
                                 else:
                                     st.error(f"Failed to delete document. Status code: {response.status_code}")
                             except Exception as e:
@@ -1412,7 +1412,7 @@ with nav_container:
         """, unsafe_allow_html=True)
         if st.button("Chat", key="goto_chat"):
             st.session_state.show_search_page = False
-            st.experimental_rerun()
+            st.rerun()
     
     with cols[1]:
         # Search button - highlight if on search page
@@ -1437,7 +1437,7 @@ with nav_container:
         """, unsafe_allow_html=True)
         if st.button("Search", key="goto_search"):
             st.session_state.show_search_page = True
-            st.experimental_rerun()
+            st.rerun()
     
     # Empty column in the middle, removing the title
     with cols[2]:
@@ -1684,13 +1684,13 @@ else:
                             add_to_chat_history(selected_doc, resp_text, timestamp=current_time)
                             
                             # Rerun to update the UI with the new messages
-                            st.experimental_rerun()
+                            st.rerun()
                             
                     except Exception as e:
                         handle_error(e)
                         error_message = f"Error: {str(e)}"
                         add_to_chat_history(selected_doc, error_message, timestamp=current_time)
-                        st.experimental_rerun()
+                        st.rerun()
             
             # Close the chatgpt-like input container
             st.markdown('</div>', unsafe_allow_html=True)

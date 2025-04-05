@@ -10,8 +10,8 @@ COPY . /app
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose the port that FastAPI will run on
-EXPOSE 8000
+# Expose the necessary ports
+EXPOSE 8000 8501  
 
 # Command to run the app
-CMD ["uvicorn", "Backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["bash", "-c", "uvicorn Backend.main:app --host 0.0.0.0 --port 8000 --reload & streamlit run Frontend/main.py --server.port 8501"]

@@ -64,43 +64,37 @@ def extract_images_from_pdf(pdf_path):
     return images
 
 def process_scanned_pdf(pdf_path):
-    """Process scanned PDF using Groq's vision model."""
+    """Process scanned PDF using GPT-4 vision model."""
     images = extract_images_from_pdf(pdf_path)
     extracted_text = []
     
     for image_base64 in images:
+        print("Processing image")
         try:
-            completion = groq_client.chat.completions.create(
-                model="llama-3.2-11b-vision-preview",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "Please extract and transcribe all the text visible in this image."
+           
+            response = open_ai_client.chat.completions.create(
+                model="gpt-4o-mini",  # Correct model name
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract the text from the image."},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"  # Use the actual base64 image
                             },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_base64}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                temperature=1,
-                max_completion_tokens=1024,
-                top_p=1,
-                stream=False,
-                stop=None
-            )
+                        },
+                    ],
+                }],
+                max_tokens=4096  # Add max tokens
+            )   
+            # Correct way to access response
             
-            extracted_text.append(completion.choices[0].message.content)
-            logger.info(f"Successfully processed image with Groq")
+            extracted_text.append(response.choices[0].message.content)
+            logger.info(f"Successfully processed image with GPT-4 Vision")
             
         except Exception as e:
-            logger.error(f"Error processing image with Groq: {str(e)}")
+            logger.error(f"Error processing image with GPT-4 Vision: {str(e)}")
             continue
     
     return " ".join(extracted_text)
@@ -114,7 +108,7 @@ def extract_text(file_path):
             text = extract_text_from_pdf(file_path)
             
             # If minimal text is extracted, assume it's a scanned PDF
-            if len(text.strip()) < 100:  # Adjust threshold as needed
+            if len(text.strip()) < 500:  # Adjust threshold as needed
                 logger.info(f"Detected possible scanned PDF, using vision model for {file_path}")
                 text = process_scanned_pdf(file_path)
             
@@ -175,7 +169,7 @@ def process_document(file_path):
     return chunks, embeddings
 
 def get_index_name_from_document(user_id, document_name):
-    
+
     """Generate a valid Weaviate class name from user_id and document name."""
     # Remove file extension if present
     base_name = os.path.splitext(document_name)[0]
@@ -422,13 +416,7 @@ def generate_chat_response(conversation_context, document_context, query):
     """Generate a chat response using OpenAI's GPT-4o-mini model."""
     messages = [
         {"role": "system", "content": (
-            "You are an AI assistant specialized in legal documents. "
-            "Answer questions based strictly on the provided context. "
-            "If the document lacks the necessary information, explicitly state that."
-            "You are a legal assistant, so you should answer questions based the document."
-            "You should maintain a professional and respectful tone in your responses."
-            "You should use very good simple and profession language"
-            "Analyze carefull content and provide a good answer"
+            "Tell everything in document context"
         )},
         {"role": "user", "content": f"""Previous Conversation History:
 {conversation_context}
@@ -524,3 +512,6 @@ def get_openai_embeddings(chunks):
         print(f"Error: {response.status_code}, {response.text}")
         return None  # Handle failure properly
     
+
+
+

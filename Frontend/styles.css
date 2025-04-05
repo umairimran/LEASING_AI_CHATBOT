@@ -1,0 +1,45 @@
+/* Fix the input bar to the bottom */
+.stTextInput input {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    padding: 15px;
+    background-color: white;
+    z-index: 100;
+    border: 1px solid #ccc;
+    border-radius: 0px;
+    font-size: 16px;
+}
+
+/* Add margin below chat container so input doesn't cover it */
+.chat-container {
+    margin-bottom: 80px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+/* Fancy headings */
+h1, h2 {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 900;
+    font-size: 3em;
+    background: linear-gradient(90deg,white,   white);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+/* Avatars (optional) */
+.user-avatar, .bot-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin: 0 10px;
+}
+
+
+
+

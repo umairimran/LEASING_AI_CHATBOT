@@ -29,6 +29,7 @@ async def upload_documents(
 
         for file_obj in files:
             try:
+                
                 # Create a temporary file to store the uploaded content
                 with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_obj.filename)[1]) as temp_file:
                     # Write uploaded file content to temporary file
