@@ -315,19 +315,14 @@ def save_class_names(file_path, class_names):
         json.dump(class_names, json_file, indent=4)
 
 
-
-
 def get_all_documents():
     try:
-    
-        class_names = load_class_names(class_names_file_path)
-        class_names_list = [item['class_name'] for item in class_names][::-1]  # Reverse the list
-        return class_names_list
+        client_pool = WeaviateClientPool()
+        class_names = client_pool.get_class_names_via_rest()
+        return class_names
     except Exception as e:
         logger.error(f"Error getting all documents: {str(e)}")
         return {"error": f"Error getting all documents: {str(e)}"}
-
-
 
 
 
@@ -343,7 +338,7 @@ def delete_document_embeddings(user_id, document_name):
         if client.collections.exists(class_name):
             # Delete the collection
             client.collections.delete(class_name)
-            delete_class_names(class_names_file_path, class_name)
+           
             logger.info(f"Deleted embeddings for document: {document_name}")
             return True
         else:

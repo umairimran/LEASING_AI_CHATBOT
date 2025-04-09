@@ -2,7 +2,7 @@ import weaviate
 import logging
 from threading import Lock
 from weaviate.classes.config import Property, DataType
-
+import requests
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,21 @@ class WeaviateClientPool:
                 raise ConnectionError("Cannot connect to Weaviate")
             logger.info("Weaviate client connected successfully")
         return self.client
+    def get_class_names_via_rest(self):
+        """Get all class names in the schema via direct REST call."""
+        try:
+            url = f"http://{WEAVIATE_HOST}:{WEAVIATE_PORT}/v1/schema"
+            response = requests.get(url)
+            response.raise_for_status()
 
+            data = response.json()
+            class_names = [cls["class"] for cls in data.get("classes", [])][::-1]
+            logger.info(f"Fetched {len(class_names)} classes via REST")
+            return class_names
+
+        except Exception as e:
+            logger.error(f"Error fetching schema via REST: {str(e)}")
+            return {"error": str(e)}
     def close_client(self):
         if self.client and self.client.is_ready():
             self.client.close()
