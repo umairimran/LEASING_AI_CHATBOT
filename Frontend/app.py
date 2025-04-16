@@ -1513,7 +1513,7 @@ else:
             selected_doc = st.selectbox(
                 "Select a document to chat with",
                 document_names,
-                key="chat_document",
+                key="selected_document",  # Changed from chat_document to selected_document
                 format_func=lambda x: x.replace('_', ' ').title() if isinstance(x, str) else x,
                 label_visibility="collapsed"
             )

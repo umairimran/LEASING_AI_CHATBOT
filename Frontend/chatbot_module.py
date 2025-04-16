@@ -40,8 +40,8 @@ def chatbot():
     # Initialize chat state
     initialize_chat_state()
 
-    # Try both possible session state keys
-    selected_document = st.session_state.get("selected_document") or st.session_state.get("chat_document")
+    # Get selected document
+    selected_document = st.session_state.get("selected_document")
    
     if not selected_document:
         st.info("Please select a document from the sidebar to start chatting.")

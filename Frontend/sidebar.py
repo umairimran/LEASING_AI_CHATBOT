@@ -101,7 +101,6 @@ def create_sidebar():
                     
                     st.sidebar.markdown('<div class="upload-success">Documents processed successfully!</div>', unsafe_allow_html=True)
           
-
                     
             except Exception as e:
                 handle_error(e)
