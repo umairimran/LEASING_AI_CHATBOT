@@ -2,5 +2,5 @@ venv/
 backend/.env
 backend/_pycache_
 tempenv/
-backend/.env/
+Backend/.env/
 
