@@ -1,5 +1,5 @@
 venv/
-backend/.env
+
 backend/_pycache_
 tempenv/
 Backend/.env
