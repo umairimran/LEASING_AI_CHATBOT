@@ -121,3 +121,4 @@ class APIClient:
     def __del__(self):
         """Close the HTTP client when the object is destroyed."""
         self.client.close() 
+

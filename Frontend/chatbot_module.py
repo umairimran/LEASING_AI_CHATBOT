@@ -76,7 +76,7 @@ def chatbot():
             # Get bot response
             with st.spinner("Thinking..."):
                 response = api_client.chat_with_document(
-                    document_name=selected_document,  # Changed selected_doc to selected_document
+                    document_name=st.session_state['chat_document'],  # Changed selected_doc to selected_document
                     query=user_query
                 )
                 
@@ -90,6 +90,7 @@ def chatbot():
                 add_to_chat_history(selected_document, resp_text, timestamp=current_time)  # Changed selected_doc to selected_document
                 
                 # Rerun to update the UI
+                print(st.session_state['selected_document'])
                 st.rerun()
                 
         except Exception as e:

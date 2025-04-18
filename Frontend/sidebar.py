@@ -3,8 +3,8 @@
 import streamlit as st
 import requests
 import os
-from api_client import APIClient  # Import your api_client for document interactions
-APIClient = APIClient()
+from api_client import APIClient
+api_client = APIClient()
 # Initialize session state for uploaded files and clear flag
 if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = None
@@ -20,7 +20,7 @@ def handle_error(e):
     """Handles any error and displays a message."""
     st.error(f"An error occurred: {e}")
 
-def get_index_name_from_document( document_name):
+def get_index_name_from_document(document_name):
 
     """Generate a valid Weaviate class name from user_id and document name."""
     # Remove file extension if present
@@ -44,12 +44,16 @@ def create_sidebar():
     """, unsafe_allow_html=True)
     st.sidebar.markdown("---")
     st.sidebar.subheader("Select Document For Chat")
-        # Document selection
+    
+    # Document selection
     try:
-        documents = APIClient.get_all_documents()
+        documents = api_client.get_all_documents()
         if documents:
             # Handle both string and dictionary document formats
             document_names = [doc if isinstance(doc, str) else doc.get('document_name', 'Unknown') for doc in documents]
+            
+            # Sort document names to ensure consistent order
+            document_names.sort()
             
             # Document selection section with better styling
             st.sidebar.markdown('<div class="document-select-container" style="margin-top:-5px; padding-top:0; padding-bottom:0;">', unsafe_allow_html=True)
@@ -60,8 +64,13 @@ def create_sidebar():
                 format_func=lambda x: x.replace('_', ' ').title() if isinstance(x, str) else x,
                 label_visibility="collapsed"
             )
+            
+            # Update session state with the selected document
             st.session_state.selected_document = selected_doc
+                
             st.sidebar.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.sidebar.info("No documents available. Please upload a document first.")
 
     except Exception as e:
         handle_error(e)
@@ -84,7 +93,7 @@ def create_sidebar():
             final_uploaded_files.append(file)
         
     uploaded_files=final_uploaded_files
-    
+  
     if uploaded_files:
         
         if st.sidebar.button("Upload Documents", key="process_docs"):
@@ -92,7 +101,7 @@ def create_sidebar():
             try:
                 with st.spinner("Uploading documents..."):
                     ## send both uploaded files and documents to the api
-                    result = APIClient.upload_documents(uploaded_files)
+                    result = api_client.upload_documents(uploaded_files)
                     st.rerun()
                     # Mark the uploaded files as recent
                     for file in uploaded_files:
@@ -107,7 +116,8 @@ def create_sidebar():
     
     # Display uploaded documents
     try:
-        documents = APIClient.get_all_documents()
+        documents = api_client.get_all_documents()
+        documents.sort()
         
         if documents:
             st.sidebar.subheader("Uploaded Documents")
