@@ -26,8 +26,6 @@ warnings.simplefilter("ignore", DeprecationWarning)
 from dotenv import load_dotenv
 load_dotenv()
 
-# Initialize Groq client
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 openai.api_key = os.getenv("OPENAI_API_KEY")
 open_ai_client = openai.OpenAI()
 # Configure logging

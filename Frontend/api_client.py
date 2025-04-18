@@ -22,8 +22,9 @@ class APIClient:
     def upload_documents(self, files: List[Any]) -> Dict:
         """Upload documents to the backend."""
         try:
+           
             files_data = [("files", file) for file in files]
-
+            
             response = self.client.post(f"{self.base_url}/upload-documents/", files=files_data, timeout=1000)
             response.raise_for_status()
             return response.json()

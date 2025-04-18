@@ -101,6 +101,7 @@ def create_sidebar():
             try:
                 with st.spinner("Uploading documents..."):
                     ## send both uploaded files and documents to the api
+                   
                     result = api_client.upload_documents(uploaded_files)
                     st.rerun()
                     # Mark the uploaded files as recent
@@ -136,27 +137,22 @@ def create_sidebar():
                 with col2:
                     unique_key = f"delete_{i}_{hash(doc_name)}"
                     if st.sidebar.button("🗑️", key=unique_key, help=f"Delete {doc_name}"):
-                        if st.session_state.get(f"confirm_{unique_key}", False):
-                           
-                            try:
-                                api_base_url = "http://localhost:8000"  # Change this to your API URL
-                                url = f"{api_base_url}/delete-embeddings"
-                                form_data = {"document_name": doc_name}
-                                response = requests.delete(url, data=form_data)
-                                
-                                if response.status_code == 200:
-                                    if doc_name in st.session_state.recent_uploads:
-                                        st.session_state.recent_uploads.remove(doc_name)
-                                    st.sidebar.markdown('<div class="upload-success">Document deleted successfully!</div>', unsafe_allow_html=True)
-                                    st.session_state.selected_document = None
-                                    st.rerun()
-                                else:
-                                    st.sidebar.error(f"Failed to delete document. Status code: {response.status_code}")
-                            except Exception as e:
-                                handle_error(e)
-                        else:
-                            st.session_state[f"confirm_{unique_key}"] = True
-                            st.sidebar.markdown(f'<div style="background-color: rgba(255, 59, 48, 0.2); padding: 10px; border-radius: 6px; color: #ff6b6b; border-left: 3px solid #ff3b30;">Click again to confirm deletion of \'{display_name}\'</div>', unsafe_allow_html=True)
+                        try:
+                            api_base_url = "http://localhost:8000"  # Change this to your API URL
+                            url = f"{api_base_url}/delete-embeddings"
+                            form_data = {"document_name": doc_name}
+                            response = requests.delete(url, data=form_data)
+                            
+                            if response.status_code == 200:
+                                if doc_name in st.session_state.recent_uploads:
+                                    st.session_state.recent_uploads.remove(doc_name)
+                                st.sidebar.markdown('<div class="upload-success">Document deleted successfully!</div>', unsafe_allow_html=True)
+                                st.session_state.selected_document = None
+                                st.rerun()
+                            else:
+                                st.sidebar.error(f"Failed to delete document. Status code: {response.status_code}")
+                        except Exception as e:
+                            handle_error(e)
     except Exception as e:
         handle_error(e)
 
