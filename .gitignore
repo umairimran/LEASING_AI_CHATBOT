@@ -4,3 +4,4 @@ backend/_pycache_
 tempenv/
 Backend/.env
 
+.env
