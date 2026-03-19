@@ -5,11 +5,40 @@ import requests
 import os
 from api_client import APIClient
 api_client = APIClient()
+
+CATEGORIES = [
+    "LLMs",
+    "Prompt Engineering",
+    "RAG",
+    "AI API Integration",
+    "AI Agents",
+]
 # Initialize session state for uploaded files and clear flag
 if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = None
 if "clear_files" not in st.session_state:
     st.session_state.clear_files = False
+if "selected_category" not in st.session_state:
+    st.session_state.selected_category = None
+
+@st.cache_data(ttl=5, show_spinner=False)
+def _cached_get_all_documents():
+    return api_client.get_all_documents()
+
+def _safe_documents_list(documents_raw):
+    """
+    Backend normally returns a list of class names.
+    If it returns an error object (dict), convert to empty list and show message.
+    """
+    if isinstance(documents_raw, list):
+        return documents_raw
+    if isinstance(documents_raw, dict):
+        # Treat as empty without breaking UI.
+        err = documents_raw.get("error") or documents_raw.get("detail")
+        if err:
+            st.sidebar.warning("Documents unavailable (backend not ready yet).")
+        return []
+    return []
 
 # Function to reset the uploaded files
 def reset_uploaded_files():
@@ -43,35 +72,37 @@ def create_sidebar():
     </div>
     """, unsafe_allow_html=True)
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Select Document For Chat")
-    
-    # Document selection
-    try:
-        documents = api_client.get_all_documents()
-        if documents:
-            # Handle both string and dictionary document formats
-            document_names = [doc if isinstance(doc, str) else doc.get('document_name', 'Unknown') for doc in documents]
-            
-            # Sort document names to ensure consistent order
-            document_names.sort()
-            
-            # Document selection section with better styling
-            st.sidebar.markdown('<div class="document-select-container" style="margin-top:-5px; padding-top:0; padding-bottom:0;">', unsafe_allow_html=True)
-            selected_doc = st.sidebar.selectbox(
-                "Select a document to chat with",
-                document_names,
-                key="chat_document",
-                format_func=lambda x: x.replace('_', ' ').title() if isinstance(x, str) else x,
-                label_visibility="collapsed"
-            )
-            
-            # Update session state with the selected document
-            st.session_state.selected_document = selected_doc
-                
-            st.sidebar.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.sidebar.info("No documents available. Please upload a document first.")
 
+    st.sidebar.subheader("1) Choose a Category")
+    current_category = st.session_state.get("selected_category")
+    category = st.sidebar.selectbox(
+        "Category",
+        options=["Select..."] + CATEGORIES,
+        index=0 if not current_category else (CATEGORIES.index(current_category) + 1),
+        label_visibility="collapsed",
+        key="category_selectbox",
+    )
+    if category == "Select...":
+        st.session_state.selected_category = None
+        st.sidebar.info("Pick a category to continue.")
+        st.sidebar.markdown("---")
+        return
+
+    st.session_state.selected_category = category
+    st.sidebar.caption(f"Selected: {category}")
+
+    # Chat scope is category-wide now (no per-document selection)
+    st.session_state.selected_document = None
+
+    # Always define documents so upload logic is safe
+    documents = []
+    try:
+        documents = _safe_documents_list(_cached_get_all_documents())
+        cat_prefix = f"{st.session_state.selected_category.lower().replace(' ', '_')}__"
+        category_docs = [d for d in documents if isinstance(d, str) and d.lower().startswith(cat_prefix)]
+        st.sidebar.caption(f"Docs in this category: {len(category_docs)}")
+        if not category_docs:
+            st.sidebar.info("No documents in this category yet. Upload a document below.")
     except Exception as e:
         handle_error(e)
     # Document Management Section
@@ -89,20 +120,28 @@ def create_sidebar():
     final_uploaded_files=[]
     for file in uploaded_files:
         cleaned_name=get_index_name_from_document(file.name)
-        if cleaned_name not in documents:
+        # If the document already exists in this category, skip it.
+        cat_prefix = f"{st.session_state.selected_category.lower().replace(' ', '_')}__"
+        existing_in_category = set(
+            d.split("__", 1)[1]
+            for d in (documents or [])
+            if isinstance(d, str) and d.lower().startswith(cat_prefix) and "__" in d
+        )
+        if cleaned_name not in existing_in_category:
             final_uploaded_files.append(file)
         
     uploaded_files=final_uploaded_files
   
     if uploaded_files:
         
-        if st.sidebar.button("Upload Documents", key="process_docs"):
+        if st.sidebar.button("Upload Documents", key="process_docs", disabled=not bool(st.session_state.selected_category)):
             
             try:
                 with st.spinner("Uploading documents..."):
                     ## send both uploaded files and documents to the api
                    
-                    result = api_client.upload_documents(uploaded_files)
+                    result = api_client.upload_documents(uploaded_files, category=st.session_state.selected_category)
+                    _cached_get_all_documents.clear()
                     st.rerun()
                     # Mark the uploaded files as recent
                     for file in uploaded_files:
@@ -117,12 +156,16 @@ def create_sidebar():
     
     # Display uploaded documents
     try:
-        documents = api_client.get_all_documents()
+        documents = _safe_documents_list(_cached_get_all_documents())
         documents.sort()
         
         if documents:
             st.sidebar.subheader("Uploaded Documents")
             
+            # Only show docs for current category
+            cat_prefix = f"{st.session_state.selected_category.lower().replace(' ', '_')}__"
+            documents = [d for d in documents if isinstance(d, str) and d.lower().startswith(cat_prefix)]
+
             for i, doc in enumerate(documents):
                 doc_name = doc if isinstance(doc, str) else doc.get('document_name', 'Unknown')
                 display_name = doc_name.replace('_', ' ').title()
@@ -144,6 +187,7 @@ def create_sidebar():
                             response = requests.delete(url, data=form_data)
                             
                             if response.status_code == 200:
+                                _cached_get_all_documents.clear()
                                 if doc_name in st.session_state.recent_uploads:
                                     st.session_state.recent_uploads.remove(doc_name)
                                 st.sidebar.markdown('<div class="upload-success">Document deleted successfully!</div>', unsafe_allow_html=True)

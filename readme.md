@@ -27,7 +27,7 @@ A Docker-based AI chatbot application for leasing assistance.
 
 7. Once the setup is complete, open your web browser and visit:
    ```
-   http://127.0.0.1:8501/
+   
    ```
 
 ## Regular Usage

@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException
 from Backend.models import SearchRequest, SearchResponse, ChatRequest, ChatResponse
 
-from Backend.document_processor import chat_with_documents, delete_document_embeddings, get_all_documents, get_fixed_user_id, process_document, get_index_name_from_document, search_documents,store_document_embeddings
+from Backend.document_processor import chat_with_documents, chat_with_category, delete_document_embeddings, get_all_documents, get_fixed_user_id, process_document, get_index_name_from_document, search_documents,store_document_embeddings
 
 from Backend.database import get_conversation_history, delete_conversation_history
 
@@ -22,6 +22,7 @@ async def test_endpoint():
 @router.post("/upload-documents/")
 async def upload_documents(
     files: List[UploadFile] = File(...),
+    category: str = Form(...),
     
 ):
     try:
@@ -48,6 +49,7 @@ async def upload_documents(
                             
                             user_id=get_fixed_user_id(),
                             document_name=file_obj.filename,
+                            category=category,
                             chunks=chunks,
                             embeddings=embeddings
                         )
@@ -92,7 +94,8 @@ async def delete_embeddings_endpoint(
 ):
     try:
         user_id = get_fixed_user_id()
-        class_name = get_index_name_from_document(user_id, document_name)
+        # document_name here is the Weaviate collection name already
+        class_name = document_name
         
         # Delete the embeddings
         result = delete_document_embeddings(user_id, document_name)
@@ -161,4 +164,31 @@ async def chat_endpoint(
 
     except Exception as e:
         logger.error(f"Chat failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat-by-category/")
+async def chat_by_category_endpoint(
+    category: str = Form(...),
+    query: str = Form(...),
+    limit: Optional[int] = Form(5),
+    alpha: Optional[float] = Form(0.5),
+):
+    """
+    Category-only chat endpoint.
+    Picks the most recent document (Weaviate collection) in the given category.
+    Returns a simple ChatResponse with the final answer.
+    """
+    try:
+        return chat_with_category(
+            user_id=get_fixed_user_id(),
+            category=category,
+            query=query,
+            limit=limit,
+            alpha=alpha,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chat-by-category failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

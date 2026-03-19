@@ -18,6 +18,8 @@ if "recent_uploads" not in st.session_state:
     st.session_state.recent_uploads = set()
 if "selected_document" not in st.session_state:  # Add this initialization
     st.session_state.selected_document = None
+if "selected_category" not in st.session_state:
+    st.session_state.selected_category = None
 if st.session_state.api_connected is False:
     api_client.wait_for_api_connection()
 # Only run connection check if not already connected
@@ -29,7 +31,9 @@ def load_css(file_name):
 create_sidebar()
 
 load_css("Frontend/styles.css")
-st.info(st.session_state.selected_document)
+category = st.session_state.get("selected_category")
+if category:
+    st.caption(f"Category: {category}")
 st.title("💬 Leasing AI Chatbot")
 chatbot()
 

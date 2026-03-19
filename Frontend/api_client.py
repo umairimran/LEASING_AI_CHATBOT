@@ -19,13 +19,14 @@ class APIClient:
         except requests.RequestException:
             return False
 
-    def upload_documents(self, files: List[Any]) -> Dict:
+    def upload_documents(self, files: List[Any], category: str) -> Dict:
         """Upload documents to the backend."""
         try:
            
             files_data = [("files", file) for file in files]
             
-            response = self.client.post(f"{self.base_url}/upload-documents/", files=files_data, timeout=1000)
+            data = {"category": category}
+            response = self.client.post(f"{self.base_url}/upload-documents/", files=files_data, data=data, timeout=1000)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -88,6 +89,21 @@ class APIClient:
             return response.json()
         except Exception as e:
             raise Exception(f"Error chatting with document: {str(e)}")
+
+    def chat_by_category(self, category: str, query: str, limit: int = 5, alpha: float = 0.5) -> Dict:
+        """Chat by category only (backend picks the latest doc in that category)."""
+        try:
+            data = {
+                "category": category,
+                "query": query,
+                "limit": limit,
+                "alpha": alpha
+            }
+            response = self.client.post(f"{self.base_url}/chat-by-category/", data=data)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            raise Exception(f"Error chatting by category: {str(e)}")
 
     def delete_embeddings(self, document_name):
         """Delete document embeddings"""

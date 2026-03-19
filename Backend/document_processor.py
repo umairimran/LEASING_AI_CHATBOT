@@ -4,7 +4,6 @@ import logging
 from typing import Any, Dict, List
 import PyPDF2
 import json
-import openai
 import requests
 
 import docx
@@ -25,9 +24,6 @@ import warnings
 warnings.simplefilter("ignore", DeprecationWarning)
 from dotenv import load_dotenv
 load_dotenv()
-
-openai.api_key = os.getenv("OPENAI_API_KEY")
-open_ai_client = openai.OpenAI()
 # Configure logging
 logger = logging.getLogger(__name__)
 class_names_file_path = 'class_names.json'
@@ -41,8 +37,8 @@ def extract_text_from_pdf(file_path):
     return text
 
 def extract_images_from_pdf(pdf_path):
-    """Extract images from PDF pages and convert them to base64."""
-    images = []
+    """Extract images from PDF pages (bytes + mime_type)."""
+    images: List[Dict[str, Any]] = []
     pdf_document = fitz.open(pdf_path)
     
     for page_num in range(len(pdf_document)):
@@ -53,49 +49,48 @@ def extract_images_from_pdf(pdf_path):
             xref = img[0]
             base_image = pdf_document.extract_image(xref)
             image_bytes = base_image["image"]
-            
-            # Convert to base64
-            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-            images.append(image_base64)
+            ext = (base_image.get("ext") or "jpeg").lower()
+            mime_type = f"image/{'jpeg' if ext in ['jpg', 'jpeg'] else ext}"
+            images.append({"bytes": image_bytes, "mime_type": mime_type})
     
     pdf_document.close()
     return images
 
 def process_scanned_pdf(pdf_path):
-    """Process scanned PDF using GPT-4 vision model."""
+    """Process scanned PDF using Gemini vision model."""
     images = extract_images_from_pdf(pdf_path)
     extracted_text = []
-    
-    for image_base64 in images:
-        print("Processing image")
+
+    api_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is required to process scanned PDFs.")
+
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+    model_id = os.getenv("GEMINI_VISION_MODEL", os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"))
+
+    for img in images:
         try:
-           
-            response = open_ai_client.chat.completions.create(
-                model="gpt-4o-mini",  # Correct model name
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Extract the text from the image."},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"  # Use the actual base64 image
-                            },
-                        },
-                    ],
-                }],
-                max_tokens=4096  # Add max tokens
-            )   
-            # Correct way to access response
-            
-            extracted_text.append(response.choices[0].message.content)
-            logger.info(f"Successfully processed image with GPT-4 Vision")
-            
+            resp = client.models.generate_content(
+                model=model_id,
+                contents=[
+                    "Extract all readable text from this image. Output only the extracted text.",
+                    types.Part.from_bytes(data=img["bytes"], mime_type=img["mime_type"]),
+                ],
+            )
+            extracted_text.append((getattr(resp, "text", None) or "").strip())
         except Exception as e:
-            logger.error(f"Error processing image with GPT-4 Vision: {str(e)}")
+            logger.error(f"Error processing image with Gemini Vision: {str(e)}")
             continue
-    
-    return " ".join(extracted_text)
+
+    try:
+        client.close()
+    except Exception:
+        pass
+
+    return " ".join([t for t in extracted_text if t])
 
 def extract_text(file_path):
     """Extract text from various file formats."""
@@ -157,25 +152,33 @@ def process_document(file_path):
     )
     chunks = text_splitter.split_text(text)
     print("Have Chunks done")
-    # Generate embeddings
-    client_pool = WeaviateClientPool()
-    client = client_pool.get_client()
-
-    embeddings = get_openai_embeddings(chunks)
+    # Generate embeddings (Gemini)
+    embeddings = get_gemini_embeddings(chunks, task_type="RETRIEVAL_DOCUMENT")
    
     
     return chunks, embeddings
 
-def get_index_name_from_document(user_id, document_name):
+def _slugify(value: str) -> str:
+    cleaned = ''.join(c if c.isalnum() else '_' for c in value).lower()
+    cleaned = cleaned.strip("_")
+    return cleaned or "default"
+
+def _weaviate_collection_name(name: str) -> str:
+    # Weaviate class/collection names often appear with leading capital letter.
+    return name[:1].upper() + name[1:] if name else name
+
+
+def get_index_name_from_document(user_id, document_name, category: str | None = None):
 
     """Generate a valid Weaviate class name from user_id and document name."""
     # Remove file extension if present
     base_name = os.path.splitext(document_name)[0]
     # Create combined name
-    combined = f"{base_name}"
-    # Clean the name (only letters, numbers, and underscores allowed)
-    cleaned = ''.join(c if c.isalnum() else '_' for c in combined).lower()
-    return cleaned 
+    doc_slug = _slugify(base_name)
+    if category:
+        cat_slug = _slugify(category)
+        return _weaviate_collection_name(f"{cat_slug}__{doc_slug}")
+    return _weaviate_collection_name(doc_slug)
 
 
 
@@ -243,13 +246,13 @@ def batch_import_objects(collection, objects: List[Dict[str, Any]], batch_size: 
 
 
 
-def store_document_embeddings(user_id, document_name, chunks, embeddings):
+def store_document_embeddings(user_id, document_name, chunks, embeddings, category: str | None = None):
     """Store document chunks and embeddings in Weaviate."""
     try:
         # Generate index name
         client_pool = WeaviateClientPool()
         client = client_pool.get_client()
-        class_name = get_index_name_from_document(user_id, document_name)
+        class_name = get_index_name_from_document(user_id, document_name, category=category)
         existing_class_names = load_class_names(class_names_file_path)
         existing_class_names.append({"class_name": class_name})
        
@@ -317,10 +320,11 @@ def get_all_documents():
     try:
         client_pool = WeaviateClientPool()
         class_names = client_pool.get_class_names_via_rest()
-        return class_names
+        return class_names if isinstance(class_names, list) else []
     except Exception as e:
         logger.error(f"Error getting all documents: {str(e)}")
-        return {"error": f"Error getting all documents: {str(e)}"}
+        # Return an empty list so UI doesn't fail when Weaviate is down.
+        return []
 
 
 
@@ -355,13 +359,12 @@ def search_documents(user_id, document_name, query, limit=5, alpha=0.5):
         client_pool = WeaviateClientPool()
         client = client_pool.get_client()
         
-        # Generate index name from document name
-        class_name = get_index_name_from_document(user_id, document_name)
+        # Frontend passes the Weaviate collection name (category__doc). Use it directly.
+        class_name = document_name
         collection = client.collections.get(class_name)
 
-        # Generate embedding for the query using SentenceTransformer
-        query_vector =get_openai_embeddings(query)
-        query_vector = query_vector[0]
+        # Generate embedding for the query (Gemini)
+        query_vector = get_gemini_embeddings(query, task_type="RETRIEVAL_QUERY")[0]
 
         # Execute hybrid search with both query text and vector
         response = collection.query.hybrid(
@@ -406,39 +409,71 @@ def delete_class_names(file_path, class_name):
 
 
 def generate_chat_response(conversation_context, document_context, query):
-    """Generate a chat response using OpenAI's GPT-4o-mini model."""
-    messages = [
-        {"role": "system", "content": (
-            "Tell everything in document context"
-        )},
-        {"role": "user", "content": f"""Previous Conversation History:
+    """
+    Generate a chat response.
+
+    Retrieval stays the same (Weaviate + OpenAI embeddings). This function supports
+    response generation via OpenAI (default) or Gemini (when configured).
+    """
+    provider = (os.getenv("CHAT_PROVIDER") or "openai").strip().lower()
+    if provider == "gemini":
+        return generate_chat_response_gemini(conversation_context, document_context, query)
+    return generate_chat_response_openai(conversation_context, document_context, query)
+
+
+def _build_chat_prompt(conversation_context, document_context, query) -> str:
+    return f"""You are a helpful assistant for analyzing lease documents.
+Follow these rules:
+- Use ONLY the provided Document Context for factual claims.
+- If the context does not contain the answer, say you cannot find it in the uploaded document.
+- Be concise and legally accurate.
+
+Previous Conversation History:
 {conversation_context}
 
 Document Context:
 {document_context}
 
 Current User Query: {query}
+"""
 
-Provide a concise, legally accurate answer based on the context above."""}
-    ]
+
+def generate_chat_response_openai(conversation_context, document_context, query):
+    """OpenAI provider disabled (project now uses Gemini)."""
+    raise RuntimeError("OpenAI is disabled. Set CHAT_PROVIDER=gemini and provide GEMINI_API_KEY.")
+
+
+def generate_chat_response_gemini(conversation_context, document_context, query):
+    """Generate a chat response using Gemini (Google GenAI SDK)."""
+    api_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    if not api_key:
+        return "Gemini is selected but GEMINI_API_KEY is not set."
+
+    prompt = _build_chat_prompt(conversation_context, document_context, query)
+    model_id = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 
     try:
-        response = open_ai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            temperature=0.4,
-            max_tokens=1024,
-            top_p=0.95
+        from google import genai
+
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model=model_id,
+            contents=prompt,
         )
-        return response.choices[0].message.content
+        try:
+            client.close()
+        except Exception:
+            pass
+        return (getattr(resp, "text", None) or "").strip() or "No response text returned from Gemini."
     except Exception as e:
-        logger.error(f"Chat generation failed: {e}")
+        logger.error(f"Gemini chat generation failed: {e}")
         return "An error occurred while generating a response."
 
 def chat_with_documents(user_id, document_name, query, limit=5, alpha=0.5):
     """Generate a chat response based on lease document context."""
     try:
-        class_name = get_index_name_from_document(user_id, document_name)
+        # Frontend passes the Weaviate collection name (category__doc). Use it directly.
+        class_name = document_name
         history = get_conversation_history(class_name)
 
         conversation_context = "\n".join(
@@ -449,7 +484,7 @@ def chat_with_documents(user_id, document_name, query, limit=5, alpha=0.5):
         client = client_pool.get_client()
         collection = client.collections.get(class_name)
 
-        query_vector = get_openai_embeddings(query)[0]
+        query_vector = get_gemini_embeddings(query, task_type="RETRIEVAL_QUERY")[0]
         search_results = collection.query.hybrid(
             query=query,
             vector=query_vector,
@@ -474,6 +509,71 @@ def chat_with_documents(user_id, document_name, query, limit=5, alpha=0.5):
         raise
 
 
+def chat_with_category(user_id, category: str, query: str, limit: int = 5, alpha: float = 0.5):
+    """
+    Category-wide RAG:
+    - searches across ALL documents (Weaviate collections) that belong to the category
+    - merges the top results and generates a single answer
+    """
+    try:
+        cat_prefix = f"{category}".strip().lower().replace(" ", "_") + "__"
+        scope_key = f"category::{cat_prefix.rstrip('_')}"
+
+        history = get_conversation_history(scope_key)
+        conversation_context = "\n".join([f"Q: {h[0]}\nA: {h[1]}" for h in history])
+
+        all_docs = get_all_documents() or []
+        if not isinstance(all_docs, list):
+            all_docs = []
+        collections = [d for d in all_docs if isinstance(d, str) and d.lower().startswith(cat_prefix)]
+        if not collections:
+            return ChatResponse(answer=f"No documents found for category '{category}'. Upload a document first.")
+
+        client_pool = WeaviateClientPool()
+        client = client_pool.get_client()
+
+        query_vector = get_gemini_embeddings(query, task_type="RETRIEVAL_QUERY")[0]
+
+        merged = []
+        per_doc_limit = max(1, min(3, limit))
+        for class_name in collections:
+            try:
+                collection = client.collections.get(class_name)
+                res = collection.query.hybrid(
+                    query=query,
+                    vector=query_vector,
+                    alpha=alpha,
+                    limit=per_doc_limit,
+                    fusion_type=HybridFusion.RELATIVE_SCORE,
+                    return_metadata=MetadataQuery(score=True),
+                )
+                for obj in res.objects:
+                    merged.append(
+                        {
+                            "document": class_name,
+                            "text": obj.properties.get("text", "") if hasattr(obj, "properties") else "",
+                            "score": getattr(getattr(obj, "metadata", None), "score", 0.0),
+                        }
+                    )
+            except Exception as e:
+                logger.warning(f"Category search failed for {class_name}: {e}")
+                continue
+
+        merged.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+        top = merged[: max(1, limit)]
+
+        document_context = "\n\n".join(
+            [f"Document: {item['document']}\nExcerpt: {item['text']}" for item in top if item.get("text")]
+        )
+
+        answer = generate_chat_response(conversation_context, document_context, query)
+        store_conversation(scope_key, query, answer)
+        return ChatResponse(answer=answer)
+    except Exception as e:
+        logger.error(f"Category chat failed: {e}")
+        raise
+
+
 def get_fixed_user_id():
     try:
         with open("config.json", "r") as f:
@@ -485,25 +585,45 @@ def get_fixed_user_id():
 
 
 
-def get_openai_embeddings(chunks):
-    url = "https://api.openai.com/v1/embeddings"
-    headers = {
-        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": "text-embedding-3-small",
-        "input": chunks if isinstance(chunks, list) else [chunks],  # Ensures list format
-        "encoding_format": "float"
-    }
+def get_gemini_embeddings(chunks, task_type: str = "RETRIEVAL_DOCUMENT"):
+    """
+    Create embeddings using Gemini.
 
-    response = requests.post(url, headers=headers, json=data)
+    Returns: List[List[float]] aligned to input order.
+    """
+    api_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is required for embeddings.")
 
-    if response.status_code == 200:
-        return [item["embedding"] for item in response.json()["data"]]
-    else:
-        print(f"Error: {response.status_code}, {response.text}")
-        return None  # Handle failure properly
+    from google import genai
+    from google.genai import types
+
+    model_id = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
+    inputs = chunks if isinstance(chunks, list) else [chunks]
+
+    client = genai.Client(api_key=api_key)
+    try:
+        resp = client.models.embed_content(
+            model=model_id,
+            contents=inputs,
+            config=types.EmbedContentConfig(task_type=task_type),
+        )
+
+        vectors: List[List[float]] = []
+        for emb in (getattr(resp, "embeddings", None) or []):
+            values = getattr(emb, "values", None)
+            if values is None and isinstance(emb, dict):
+                values = emb.get("values")
+            vectors.append(list(values or []))
+
+        if len(vectors) != len(inputs):
+            raise RuntimeError(f"Gemini returned {len(vectors)} embeddings for {len(inputs)} inputs.")
+        return vectors
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
     
 
 

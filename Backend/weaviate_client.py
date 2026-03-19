@@ -48,7 +48,8 @@ class WeaviateClientPool:
 
         except Exception as e:
             logger.error(f"Error fetching schema via REST: {str(e)}")
-            return {"error": str(e)}
+            # Always return a list so the frontend never crashes.
+            return []
     def close_client(self):
         if self.client and self.client.is_ready():
             self.client.close()

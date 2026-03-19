@@ -10,8 +10,6 @@ def initialize_chat_state():
         st.session_state.chat_history = {}
     if 'selected_document' not in st.session_state:
         st.session_state.selected_document = None
-    if 'chat_document' not in st.session_state:
-        st.session_state.chat_document = None
 
 def add_to_chat_history(document_name, message, is_user=False, timestamp=None):
     """Add a message to the chat history"""
@@ -40,16 +38,19 @@ def chatbot():
     # Initialize chat state
     initialize_chat_state()
 
-    # Get selected document
-    selected_document = st.session_state.get("selected_document")
-   
-    if not selected_document:
-        st.info("Please select a document from the sidebar to start chatting.")
+    # Require category first
+    selected_category = st.session_state.get("selected_category")
+    if not selected_category:
+        st.info("Please choose a category from the sidebar to start.")
         return
 
+    # Category-wide chat (no per-document selection)
+    selected_document = None
+    chat_scope_key = f"category::{selected_category}"
+
     # Display chat history
-    if selected_document in st.session_state.chat_history:
-        for message in st.session_state.chat_history[selected_document]:
+    if chat_scope_key in st.session_state.chat_history:
+        for message in st.session_state.chat_history[chat_scope_key]:
             time = format_timestamp(message.get("timestamp", ""))
             text = message["message"]
             
@@ -65,18 +66,23 @@ def chatbot():
                     st.caption(f"{time}")
 
     # Chat input
-    user_query = st.chat_input("Ask something about the document...")
+    prompt_hint = "Ask something..."
+    if selected_document:
+        prompt_hint = "Ask something about the selected document..."
+    else:
+        prompt_hint = "Ask something (will use latest document in this category)..."
+    user_query = st.chat_input(prompt_hint)
     
     if user_query:
         try:
             # Add user message to chat history
             current_time = datetime.datetime.now().strftime('%H:%M:%S')
-            add_to_chat_history(selected_document, user_query, is_user=True, timestamp=current_time)  # Changed selected_doc to selected_document
+            add_to_chat_history(chat_scope_key, user_query, is_user=True, timestamp=current_time)
             
             # Get bot response
             with st.spinner("Thinking..."):
-                response = api_client.chat_with_document(
-                    document_name=st.session_state['chat_document'],  # Changed selected_doc to selected_document
+                response = api_client.chat_by_category(
+                    category=selected_category,
                     query=user_query
                 )
                 
@@ -87,10 +93,9 @@ def chatbot():
                     resp_text = str(response)
                 
                 # Add bot response to chat history
-                add_to_chat_history(selected_document, resp_text, timestamp=current_time)  # Changed selected_doc to selected_document
+                add_to_chat_history(chat_scope_key, resp_text, timestamp=current_time)
                 
                 # Rerun to update the UI
-                print(st.session_state['selected_document'])
                 st.rerun()
                 
         except Exception as e:

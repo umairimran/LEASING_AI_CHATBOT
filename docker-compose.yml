@@ -27,6 +27,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile  # Point to the Dockerfile
+    env_file:
+      - .env
     ports:
       - "8000:8000"  # Map port 8000 of the container to port 8000 on the host
       - "8501:8501"  # Map port 8501 of the container to port 8501 on the host (for Streamlit)
